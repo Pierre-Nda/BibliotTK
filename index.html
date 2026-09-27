@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ma Bibliothèque</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F6F5F0; --surface:#FFFFFF; --ink:#201F1B; --ink-soft:#6B6659;
+  --accent:#35513F; --accent-soft:#DCE6DE; --warm:#A85A2A; --warm-soft:#F3E2D3;
+  --line:#E3E0D5; --radius:3px;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  box-sizing:border-box;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1B1A17; --surface:#242320; --ink:#EDEAE2; --ink-soft:#A29C8C;
+    --accent:#7FB098; --accent-soft:#26332B; --warm:#D98A52; --warm-soft:#3A2A1E; --line:#38352E;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1B1A17; --surface:#242320; --ink:#EDEAE2; --ink-soft:#A29C8C;
+  --accent:#7FB098; --accent-soft:#26332B; --warm:#D98A52; --warm-soft:#3A2A1E; --line:#38352E;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.4}
+h1,h2,.serif{font-family:'Fraunces',Georgia,serif}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:calc(14px + env(safe-area-inset-top,0px)) 16px 10px;border-bottom:1px solid var(--line)}
+header h1{margin:0 0 10px;font-size:22px;font-weight:600;letter-spacing:.2px}
+.searchrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input[type=search]{flex:1;min-width:140px;padding:9px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);font-size:14px}
+select{padding:9px 8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);font-size:13px}
+.btn{padding:8px 12px;border-radius:var(--radius);border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:13px;cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chips{display:flex;gap:6px;margin-top:10px;overflow-x:auto}
+.chip{padding:6px 12px;border-radius:20px;border:1px solid var(--line);font-size:13px;cursor:pointer;background:var(--surface);color:var(--ink-soft);flex:none}
+.chip.active{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+main{padding:10px 16px 100px;max-width:760px;margin:0 auto}
+.row{display:flex;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer;align-items:center}
+.row .bar{width:4px;align-self:stretch;border-radius:2px;background:var(--accent)}
+.row.wishlist .bar{background:var(--warm)}
+.row .info{flex:1;min-width:0}
+.row .titre{font-weight:600;font-size:15px}
+.row .meta{color:var(--ink-soft);font-size:13px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{font-size:11px;padding:2px 7px;border-radius:10px;background:var(--accent-soft);color:var(--accent);margin-left:6px}
+.badge.warm{background:var(--warm-soft);color:var(--warm)}
+.empty{text-align:center;padding:60px 20px;color:var(--ink-soft)}
+.empty h2{color:var(--ink);margin-bottom:6px}
+footer.stats{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--line);padding:8px 16px calc(8px + env(safe-area-inset-bottom,0px));font-size:12px;color:var(--ink-soft);display:flex;justify-content:center;gap:18px}
+dialog{border:none;border-radius:6px;padding:0;width:min(520px,92vw);max-height:88vh;overflow:auto;background:var(--surface);color:var(--ink)}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+.sheet{padding:20px}
+.sheet h2{margin:0 0 14px;font-size:19px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:4px}
+.field input,.field textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);color:var(--ink);font-size:14px;font-family:inherit}
+.field textarea{resize:vertical;min-height:60px}
+.field.check{display:flex;align-items:center;gap:8px}
+.field.check input{width:auto}
+.sheetbtns{display:flex;gap:8px;margin-top:16px;justify-content:space-between}
+.sheetbtns .left{display:flex;gap:8px}
+#importDlg .sheet p{color:var(--ink-soft);font-size:13.5px;line-height:1.5}
+#importDlg .step{margin-bottom:16px}
+.fileinput{display:none}
+label.btn{display:inline-block;text-align:center}
+.toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:50;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <h1>📚 Ma Bibliothèque</h1>
+  <div class="searchrow">
+    <input type="search" id="search" placeholder="Rechercher un titre, une série, un auteur…">
+    <select id="sort">
+      <option value="serie">Trier : Série</option>
+      <option value="titre">Trier : Titre</option>
+      <option value="auteur">Trier : Auteur</option>
+      <option value="date">Trier : Ajout récent</option>
+    </select>
+  </div>
+  <div class="chips">
+    <div class="chip active" data-filter="tous">Tous</div>
+    <div class="chip" data-filter="possede">Possédés</div>
+    <div class="chip" data-filter="wishlist">Wishlist</div>
+    <div class="chip" data-filter="nonlu">Non lus</div>
+    <div class="chip" data-filter="vendu">Vendus</div>
+    <div class="chip" data-action="add" style="margin-left:auto">+ Ajouter par ISBN</div>
+    <div class="chip" data-action="import">Importer</div>
+    <div class="chip" data-action="export">Exporter</div>
+  </div>
+</header>
+
+<main id="list"></main>
+
+<footer class="stats" id="stats"></footer>
+
+<dialog id="detailDlg"><div class="sheet" id="detailBody"></div></dialog>
+
+<dialog id="importDlg">
+  <div class="sheet">
+    <h2>Importer ma collection</h2>
+    <div class="step">
+      <strong>Depuis BédéGest (CSV)</strong>
+      <p>Exporte ta collection depuis BédéGest, puis sélectionne le fichier .csv ci-dessous. Seules les lignes "ALBUM" sont importées.</p>
+      <label class="btn primary" for="csvFile">Choisir un fichier CSV</label>
+      <input type="file" id="csvFile" class="fileinput" accept=".csv,text/csv,text/comma-separated-values,text/plain">
+    </div>
+    <div class="step">
+      <strong>Depuis une sauvegarde (JSON)</strong>
+      <p>Restaure une sauvegarde exportée précédemment depuis cette app.</p>
+      <label class="btn" for="jsonFile">Choisir un fichier de sauvegarde</label>
+      <input type="file" id="jsonFile" class="fileinput" accept=".json,application/json">
+    </div>
+    <div class="sheetbtns"><span></span><button class="btn" onclick="importDlg.close()">Fermer</button></div>
+  </div>
+</dialog>
+
+<dialog id="addDlg">
+  <div class="sheet" id="addBody">
+    <h2>Ajouter par ISBN</h2>
+    <div class="field"><label>ISBN</label><input id="add_isbn" inputmode="numeric" placeholder="978…"></div>
+    <div class="sheetbtns"><span></span><div class="left"><button class="btn" onclick="addDlg.close()">Fermer</button><button class="btn primary" onclick="doSearchISBN()">Rechercher</button></div></div>
+    <div id="addResult"></div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const LS_KEY = 'biblio_data_v1';
+let items = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+// migration : ancien champ booléen wishlist -> statut possede/wishlist/vendu
+items.forEach(it=>{ if(!it.statut) it.statut = it.wishlist ? 'wishlist' : 'possede'; });
+const $ = s => document.querySelector(s);
+const importDlg = $('#importDlg'), detailDlg = $('#detailDlg'), addDlg = $('#addDlg');
+let currentFilter = 'tous';
+
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify(items)); }
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+function uid(){ return 'x'+Math.random().toString(36).slice(2,10); }
+
+// --- CSV parsing (délimiteur ';', gère guillemets et retours à la ligne internes) ---
+function parseCSV(text){
+  const rows=[]; let row=[]; let field=''; let inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i+1]==='"'){ field+='"'; i++; } else { inQuotes=false; }
+      } else field+=c;
+    } else {
+      if(c==='"') inQuotes=true;
+      else if(c===';'){ row.push(field); field=''; }
+      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else if(c==='\r'){ /* skip */ }
+      else field+=c;
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+
+function importBedegest(text){
+  const rows = parseCSV(text);
+  const header = rows[0];
+  const idx = name => header.indexOf(name);
+  const iTable=idx('Table'), iISBN=idx('ISBN'), iSerie=idx('Serie'), iNum=idx('Num'), iNumA=idx('NumA'),
+        iTitre=idx('Titre'), iEditeur=idx('Editeur'), iCollection=idx('Collection'), iEO=idx('EO'), iDL=idx('DL'),
+        iAI=idx('AI'), iDateAchat=idx('DateAchat'), iPrixAchat=idx('PrixAchat'), iScenariste=idx('Scenariste'),
+        iDessinateur=idx('Dessinateur'), iWishlist=idx('Wishlist'), iLu=idx('Lu'), iDateLu=idx('DateLu'),
+        iDedicace=idx('Dedicace'), iCommentaire=idx('Commentaire'), iLocalisation=idx('Localisation');
+  let count=0;
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r];
+    if(!row || row[iTable]!=='ALBUM') continue;
+    items.push({
+      id: uid(),
+      type: 'BD',
+      isbn: row[iISBN]||'',
+      serie: row[iSerie]||'',
+      tome: row[iNum]||'',
+      typeEdition: row[iNumA]||'',
+      titre: row[iTitre]||'',
+      editeur: row[iEditeur]||'',
+      collection: row[iCollection]||'',
+      editionOriginale: row[iEO]==='1',
+      depotLegal: row[iDL]||'',
+      anneeImpression: row[iAI]||'',
+      scenariste: row[iScenariste]||'',
+      dessinateur: row[iDessinateur]||'',
+      dateAchat: row[iDateAchat]||'',
+      prixAchat: row[iPrixAchat]||'',
+      statut: row[iWishlist]==='1' ? 'wishlist' : 'possede',
+      lu: row[iLu] && row[iLu]!=='0',
+      dateLu: row[iDateLu]||'',
+      dedicace: row[iDedicace]==='1',
+      commentaire: row[iCommentaire]||'',
+      localisation: row[iLocalisation]||'',
+      ajoutLe: Date.now()
+    });
+    count++;
+  }
+  save(); render();
+  toast(count+' albums importés');
+}
+
+$('#csvFile').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{ try{ importBedegest(ev.target.result); importDlg.close(); } catch(err){ toast('Erreur import : '+err.message); } };
+  reader.onerror=()=>toast('Impossible de lire ce fichier');
+  reader.readAsText(f, 'UTF-8');
+  e.target.value='';
+});
+
+$('#jsonFile').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(!Array.isArray(data)) throw new Error('format invalide');
+      data.forEach(it=>{ if(!it.statut) it.statut = it.wishlist ? 'wishlist' : 'possede'; });
+      items = data; save(); render(); importDlg.close();
+      toast(data.length+' fiches restaurées');
+    } catch(err){ toast('Erreur restauration : '+err.message); }
+  };
+  reader.onerror=()=>toast('Impossible de lire ce fichier');
+  reader.readAsText(f,'UTF-8');
+  e.target.value='';
+});
+
+async function exportBackup(){
+  const date = new Date().toISOString().slice(0,10);
+  const data = JSON.stringify(items,null,2);
+  try{
+    const downloads = (window.claude && window.claude.use) ? await window.claude.use('downloads') : null;
+    if(!downloads){ toast('Export indisponible dans cette vue'); return; }
+    const res = await downloads.save({ filename: 'biblio-sauvegarde-'+date+'.json', data });
+    toast(res.status==='saved' ? 'Sauvegarde enregistrée — range-la sur ton Drive' : 'Sauvegarde envoyée');
+  } catch(err){
+    if(err && err.code==='declined') return;
+    toast('Export impossible : '+(err && err.message ? err.message : 'erreur inconnue'));
+  }
+}
+
+document.querySelectorAll('.chip[data-filter]').forEach(c=>{
+  c.addEventListener('click',()=>{
+    document.querySelectorAll('.chip[data-filter]').forEach(x=>x.classList.remove('active'));
+    c.classList.add('active'); currentFilter=c.dataset.filter; render();
+  });
+});
+document.querySelector('[data-action="import"]').addEventListener('click',()=>importDlg.showModal());
+document.querySelector('[data-action="add"]').addEventListener('click',()=>{
+  $('#add_isbn').value=''; $('#addResult').innerHTML=''; addDlg.showModal(); setTimeout(()=>$('#add_isbn').focus(),50);
+});
+document.querySelector('[data-action="export"]').addEventListener('click',exportBackup);
+$('#search').addEventListener('input', render);
+$('#sort').addEventListener('change', render);
+
+function matchesFilter(it){
+  if(currentFilter==='possede') return it.statut==='possede';
+  if(currentFilter==='wishlist') return it.statut==='wishlist';
+  if(currentFilter==='vendu') return it.statut==='vendu';
+  if(currentFilter==='nonlu') return !it.lu && it.statut!=='wishlist';
+  return true;
+}
+function matchesSearch(it,q){
+  if(!q) return true;
+  q=q.toLowerCase();
+  return [it.titre,it.serie,it.editeur,it.scenariste,it.dessinateur,it.collection,it.isbn]
+    .some(v=> (v||'').toLowerCase().includes(q));
+}
+
+function render(){
+  const q = $('#search').value.trim();
+  const sort = $('#sort').value;
+  let list = items.filter(it=>matchesFilter(it) && matchesSearch(it,q));
+  list.sort((a,b)=>{
+    if(sort==='titre') return (a.titre||'').localeCompare(b.titre||'');
+    if(sort==='auteur') return (a.scenariste||'').localeCompare(b.scenariste||'');
+    if(sort==='date') return (b.ajoutLe||0)-(a.ajoutLe||0);
+    return (a.serie||a.titre||'').localeCompare(b.serie||b.titre||'') || (parseInt(a.tome)||0)-(parseInt(b.tome)||0);
+  });
+  const main = $('#list');
+  if(items.length===0){
+    main.innerHTML = `<div class="empty"><h2>Ta bibliothèque est vide</h2><p>Importe ta collection BédéGest ou ajoute un premier livre pour commencer.</p></div>`;
+  } else if(list.length===0){
+    main.innerHTML = `<div class="empty"><h2>Aucun résultat</h2><p>Essaie un autre mot-clé ou un autre filtre.</p></div>`;
+  } else {
+    main.innerHTML = list.map(it=>`
+      <div class="row ${it.statut==='wishlist'?'wishlist':''}" onclick="openDetail('${it.id}')">
+        <div class="bar" style="${it.statut==='vendu'?'background:var(--ink-soft)':''}"></div>
+        <div class="info">
+          <div class="titre">${esc(it.serie||it.titre)}${it.tome?` <span style="color:var(--ink-soft);font-weight:400">#${esc(it.tome)}</span>`:''}
+            ${it.statut==='wishlist'?'<span class="badge warm">Wishlist</span>':''}${it.statut==='vendu'?'<span class="badge">Vendu</span>':''}${it.lu?'<span class="badge">Lu</span>':''}
+          </div>
+          <div class="meta">${esc(it.titre)} — ${esc(it.scenariste||'')}${it.dessinateur&&it.dessinateur!==it.scenariste?' / '+esc(it.dessinateur):''} · ${esc(it.editeur||'')}</div>
+        </div>
+      </div>`).join('');
+  }
+  const total=items.length, poss=items.filter(i=>i.statut==='possede').length,
+        wish=items.filter(i=>i.statut==='wishlist').length, vendu=items.filter(i=>i.statut==='vendu').length;
+  $('#stats').innerHTML = `<span>${total} fiches</span><span>${poss} possédés</span><span>${wish} wishlist</span><span>${vendu} vendus</span>`;
+}
+
+function esc(s){ return (s||'').toString().replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function openDetail(id){
+  const it = items.find(i=>i.id===id); if(!it) return;
+  $('#detailBody').innerHTML = `
+    <h2>${esc(it.titre)}</h2>
+    <div class="field"><label>Série</label><input id="f_serie" value="${esc(it.serie)}"></div>
+    <div class="field"><label>Tome</label><input id="f_tome" value="${esc(it.tome)}"></div>
+    <div class="field"><label>Titre</label><input id="f_titre" value="${esc(it.titre)}"></div>
+    <div class="field"><label>Scénariste</label><input id="f_scenariste" value="${esc(it.scenariste)}"></div>
+    <div class="field"><label>Dessinateur</label><input id="f_dessinateur" value="${esc(it.dessinateur)}"></div>
+    <div class="field"><label>Éditeur / Collection</label><input id="f_editeur" value="${esc(it.editeur)}"></div>
+    <div class="field"><label>ISBN</label><input id="f_isbn" value="${esc(it.isbn)}"></div>
+    <div class="field"><label>Localisation</label><input id="f_localisation" value="${esc(it.localisation)}"></div>
+    <div class="field"><label>Commentaire</label><textarea id="f_commentaire">${esc(it.commentaire)}</textarea></div>
+    <div class="field"><label>Statut</label>
+      <select id="f_statut">
+        <option value="possede" ${it.statut==='possede'?'selected':''}>Possédé</option>
+        <option value="wishlist" ${it.statut==='wishlist'?'selected':''}>Wishlist (pas encore acheté)</option>
+        <option value="vendu" ${it.statut==='vendu'?'selected':''}>Vendu (déjà possédé, plus en collection)</option>
+      </select>
+    </div>
+    <div class="field check"><input type="checkbox" id="f_lu" ${it.lu?'checked':''}><label style="margin:0">Lu</label></div>
+    <div class="sheetbtns">
+      <div class="left"><button class="btn" onclick="deleteItem('${it.id}')" style="color:#b04545">Supprimer</button></div>
+      <div class="left"><button class="btn" onclick="detailDlg.close()">Annuler</button><button class="btn primary" onclick="saveItem('${it.id}')">Enregistrer</button></div>
+    </div>`;
+  detailDlg.showModal();
+}
+function saveItem(id){
+  const it = items.find(i=>i.id===id); if(!it) return;
+  it.serie=$('#f_serie').value; it.tome=$('#f_tome').value; it.titre=$('#f_titre').value;
+  it.scenariste=$('#f_scenariste').value; it.dessinateur=$('#f_dessinateur').value;
+  it.editeur=$('#f_editeur').value; it.isbn=$('#f_isbn').value; it.localisation=$('#f_localisation').value;
+  it.commentaire=$('#f_commentaire').value; it.statut=$('#f_statut').value; it.lu=$('#f_lu').checked;
+  save(); render(); detailDlg.close(); toast('Fiche mise à jour');
+}
+function deleteItem(id){
+  items = items.filter(i=>i.id!==id); save(); render(); detailDlg.close(); toast('Fiche supprimée');
+}
+
+// --- Recherche par ISBN : Google Books + Open Library, fusionnées ---
+async function fetchGoogleBooks(isbn){
+  try{
+    const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:'+isbn);
+    if(!r.ok) return null;
+    const d = await r.json();
+    const v = d.items && d.items[0] && d.items[0].volumeInfo;
+    if(!v) return null;
+    return {
+      titre: v.title + (v.subtitle ? ' - '+v.subtitle : ''),
+      auteurs: (v.authors||[]).join(', '),
+      editeur: v.publisher||'', date: v.publishedDate||'',
+      couverture: v.imageLinks ? (v.imageLinks.thumbnail||'').replace('http://','https://') : '',
+      resume: v.description||''
+    };
+  } catch(e){ return null; }
+}
+async function fetchOpenLibrary(isbn){
+  try{
+    const r = await fetch('https://openlibrary.org/api/books?bibkeys=ISBN:'+isbn+'&format=json&jscmd=data');
+    if(!r.ok) return null;
+    const d = await r.json();
+    const b = d['ISBN:'+isbn];
+    if(!b) return null;
+    return {
+      titre: b.title||'', auteurs: (b.authors||[]).map(a=>a.name).join(', '),
+      editeur: (b.publishers||[])[0] ? b.publishers[0].name : '', date: b.publish_date||'',
+      couverture: b.cover ? (b.cover.medium||b.cover.small||'') : ''
+    };
+  } catch(e){ return null; }
+}
+async function searchISBN(isbn){
+  const [gb, ol] = await Promise.all([fetchGoogleBooks(isbn), fetchOpenLibrary(isbn)]);
+  if(!gb && !ol) return null;
+  return {
+    titre: (gb&&gb.titre) || (ol&&ol.titre) || '',
+    auteurs: (gb&&gb.auteurs) || (ol&&ol.auteurs) || '',
+    editeur: (gb&&gb.editeur) || (ol&&ol.editeur) || '',
+    date: (gb&&gb.date) || (ol&&ol.date) || '',
+    couverture: (gb&&gb.couverture) || (ol&&ol.couverture) || '',
+    resume: (gb&&gb.resume) || ''
+  };
+}
+
+async function doSearchISBN(){
+  const isbn = $('#add_isbn').value.replace(/[^0-9Xx]/g,'');
+  if(!isbn){ toast('Entre un ISBN'); return; }
+  $('#addResult').innerHTML = '<p style="color:var(--ink-soft)">Recherche en cours…</p>';
+  let data;
+  try{ data = await searchISBN(isbn); }
+  catch(e){ $('#addResult').innerHTML = '<p style="color:var(--ink-soft)">Erreur réseau — vérifie ta connexion.</p>'; return; }
+  renderAddForm(isbn, data);
+}
+
+function renderAddForm(isbn, data){
+  const found = !!data;
+  const d = data || {titre:'',auteurs:'',editeur:'',date:'',couverture:'',resume:''};
+  $('#addResult').innerHTML = `
+    ${found ? '' : '<p style="color:var(--warm)">Aucun résultat en ligne — remplis la fiche à la main.</p>'}
+    ${d.couverture ? `<img src="${esc(d.couverture)}" style="height:90px;border-radius:4px;margin-bottom:10px">` : ''}
+    <div class="field"><label>Titre</label><input id="n_titre" value="${esc(d.titre)}"></div>
+    <div class="field"><label>Série (laisser vide si roman/one-shot)</label><input id="n_serie" value=""></div>
+    <div class="field"><label>Tome</label><input id="n_tome" value=""></div>
+    <div class="field"><label>Scénariste / Auteur</label><input id="n_scenariste" value="${esc(d.auteurs)}"></div>
+    <div class="field"><label>Dessinateur (si BD)</label><input id="n_dessinateur" value=""></div>
+    <div class="field"><label>Éditeur</label><input id="n_editeur" value="${esc(d.editeur)}"></div>
+    <div class="field"><label>Type</label>
+      <select id="n_type"><option value="BD">BD</option><option value="Roman">Roman</option><option value="Comics">Comics</option></select>
+    </div>
+    <div class="field"><label>Statut</label>
+      <select id="n_statut"><option value="possede">Possédé</option><option value="wishlist">Wishlist</option></select>
+    </div>
+    <div class="sheetbtns"><span></span><button class="btn primary" onclick="saveNewItem('${isbn}')">Ajouter à la bibliothèque</button></div>
+  `;
+}
+
+function saveNewItem(isbn){
+  const existing = items.find(i=>i.isbn===isbn && i.statut!=='vendu');
+  if(existing && !confirm(`Tu as déjà « ${existing.titre} » (${existing.statut}) avec cet ISBN. Ajouter quand même un exemplaire supplémentaire ?`)) return;
+  items.push({
+    id: uid(), type: $('#n_type').value, isbn,
+    serie: $('#n_serie').value, tome: $('#n_tome').value, titre: $('#n_titre').value,
+    scenariste: $('#n_scenariste').value, dessinateur: $('#n_dessinateur').value,
+    editeur: $('#n_editeur').value, collection:'', dateAchat:'', prixAchat:'',
+    statut: $('#n_statut').value, lu:false, dateLu:'', dedicace:false,
+    commentaire:'', localisation:'', ajoutLe: Date.now()
+  });
+  save(); render(); addDlg.close();
+  toast('Ajouté à la bibliothèque');
+}
+
+render();
+</script>
+</body>
+</html>
