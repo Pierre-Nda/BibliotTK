@@ -90,6 +90,7 @@ label.btn{display:inline-block;text-align:center}
     <div class="chip" data-filter="nonlu">Non lus</div>
     <div class="chip" data-filter="vendu">Vendus</div>
     <div class="chip" data-action="add" style="margin-left:auto">+ Ajouter par ISBN</div>
+    <div class="chip" data-action="settings">⚙ Réglages</div>
     <div class="chip" data-action="import">Importer</div>
     <div class="chip" data-action="export">Exporter</div>
   </div>
@@ -129,6 +130,18 @@ label.btn{display:inline-block;text-align:center}
   </div>
 </dialog>
 
+<dialog id="settingsDlg">
+  <div class="sheet">
+    <h2>Réglages</h2>
+    <div class="field">
+      <label>Clé API Google Books (optionnelle mais recommandée)</label>
+      <input id="s_gbkey" placeholder="AIza…">
+    </div>
+    <p style="color:var(--ink-soft);font-size:13px">Sans clé, Google Books limite très vite les recherches anonymes. Avec une clé gratuite, la recherche devient fiable. La clé reste stockée uniquement sur cet appareil.</p>
+    <div class="sheetbtns"><span></span><div class="left"><button class="btn" onclick="settingsDlg.close()">Fermer</button><button class="btn primary" onclick="saveSettings()">Enregistrer</button></div></div>
+  </div>
+</dialog>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -137,7 +150,9 @@ let items = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
 // migration : ancien champ booléen wishlist -> statut possede/wishlist/vendu
 items.forEach(it=>{ if(!it.statut) it.statut = it.wishlist ? 'wishlist' : 'possede'; });
 const $ = s => document.querySelector(s);
-const importDlg = $('#importDlg'), detailDlg = $('#detailDlg'), addDlg = $('#addDlg');
+const importDlg = $('#importDlg'), detailDlg = $('#detailDlg'), addDlg = $('#addDlg'), settingsDlg = $('#settingsDlg');
+const SETTINGS_KEY = 'biblio_settings_v1';
+let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
 let currentFilter = 'tous';
 
 function save(){ localStorage.setItem(LS_KEY, JSON.stringify(items)); }
@@ -259,6 +274,14 @@ document.querySelector('[data-action="import"]').addEventListener('click',()=>im
 document.querySelector('[data-action="add"]').addEventListener('click',()=>{
   $('#add_isbn').value=''; $('#addResult').innerHTML=''; addDlg.showModal(); setTimeout(()=>$('#add_isbn').focus(),50);
 });
+document.querySelector('[data-action="settings"]').addEventListener('click',()=>{
+  $('#s_gbkey').value = settings.gbkey || ''; settingsDlg.showModal();
+});
+function saveSettings(){
+  settings.gbkey = $('#s_gbkey').value.trim();
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  settingsDlg.close(); toast('Réglages enregistrés');
+}
 document.querySelector('[data-action="export"]').addEventListener('click',exportBackup);
 $('#search').addEventListener('input', render);
 $('#sort').addEventListener('change', render);
@@ -353,7 +376,8 @@ function deleteItem(id){
 // --- Recherche par ISBN : Google Books + Open Library, fusionnées ---
 async function fetchGoogleBooks(isbn){
   try{
-    const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:'+isbn);
+    const key = settings.gbkey ? '&key='+encodeURIComponent(settings.gbkey) : '';
+    const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:'+isbn+key);
     if(r.status===429) return {rateLimited:true};
     if(!r.ok) return null;
     const d = await r.json();
