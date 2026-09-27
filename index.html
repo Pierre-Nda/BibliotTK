@@ -354,6 +354,7 @@ function deleteItem(id){
 async function fetchGoogleBooks(isbn){
   try{
     const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:'+isbn);
+    if(r.status===429) return {rateLimited:true};
     if(!r.ok) return null;
     const d = await r.json();
     const v = d.items && d.items[0] && d.items[0].volumeInfo;
@@ -383,14 +384,17 @@ async function fetchOpenLibrary(isbn){
 }
 async function searchISBN(isbn){
   const [gb, ol] = await Promise.all([fetchGoogleBooks(isbn), fetchOpenLibrary(isbn)]);
-  if(!gb && !ol) return null;
+  const gbData = (gb && !gb.rateLimited) ? gb : null;
+  if(!gbData && !ol){
+    return (gb && gb.rateLimited) ? { rateLimited:true } : null;
+  }
   return {
-    titre: (gb&&gb.titre) || (ol&&ol.titre) || '',
-    auteurs: (gb&&gb.auteurs) || (ol&&ol.auteurs) || '',
-    editeur: (gb&&gb.editeur) || (ol&&ol.editeur) || '',
-    date: (gb&&gb.date) || (ol&&ol.date) || '',
-    couverture: (gb&&gb.couverture) || (ol&&ol.couverture) || '',
-    resume: (gb&&gb.resume) || ''
+    titre: (gbData&&gbData.titre) || (ol&&ol.titre) || '',
+    auteurs: (gbData&&gbData.auteurs) || (ol&&ol.auteurs) || '',
+    editeur: (gbData&&gbData.editeur) || (ol&&ol.editeur) || '',
+    date: (gbData&&gbData.date) || (ol&&ol.date) || '',
+    couverture: (gbData&&gbData.couverture) || (ol&&ol.couverture) || '',
+    resume: (gbData&&gbData.resume) || ''
   };
 }
 
@@ -401,6 +405,12 @@ async function doSearchISBN(){
   let data;
   try{ data = await searchISBN(isbn); }
   catch(e){ $('#addResult').innerHTML = '<p style="color:var(--ink-soft)">Erreur réseau — vérifie ta connexion.</p>'; return; }
+  if(data && data.rateLimited){
+    $('#addResult').innerHTML = `<p style="color:var(--warm)">Google Books limite les recherches sans clé et a temporairement bloqué la requête.</p>
+      <button class="btn primary" onclick="doSearchISBN()">Réessayer</button>
+      <button class="btn" onclick="renderAddForm('${isbn}', null)" style="margin-left:6px">Continuer sans, saisie manuelle</button>`;
+    return;
+  }
   renderAddForm(isbn, data);
 }
 
