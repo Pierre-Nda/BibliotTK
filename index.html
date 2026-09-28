@@ -68,6 +68,15 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 #importDlg .step{margin-bottom:16px}
 .fileinput{display:none}
 label.btn{display:inline-block;text-align:center}
+.tabs{display:flex;margin-bottom:10px;border-bottom:1px solid var(--line)}
+.tab{padding:8px 16px;cursor:pointer;color:var(--ink-soft);border-bottom:2px solid transparent;font-weight:600;font-size:15px}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+details.serie{border-bottom:1px solid var(--line)}
+details.serie summary{padding:12px 4px;cursor:pointer;list-style:none}
+details.serie summary::-webkit-details-marker{display:none}
+details.serie summary .titre{font-family:'Fraunces',Georgia,serif;font-size:16px}
+details.serie[open] summary{background:var(--accent-soft)}
+details.serie .row{padding-left:18px}
 .toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:50;opacity:0;transition:opacity .25s;pointer-events:none}
 .toast.show{opacity:1}
 </style>
@@ -75,6 +84,7 @@ label.btn{display:inline-block;text-align:center}
 <body>
 <header>
   <h1>📚 Ma Bibliothèque</h1>
+  <div class="tabs"><div class="tab active" data-biblio="BD">Bandes dessinées</div><div class="tab" data-biblio="Livre">Livres</div></div>
   <div class="searchrow">
     <input type="search" id="search" placeholder="Rechercher un titre, une série, un auteur…">
     <select id="sort">
@@ -83,6 +93,8 @@ label.btn{display:inline-block;text-align:center}
       <option value="auteur">Trier : Auteur</option>
       <option value="date">Trier : Ajout récent</option>
     </select>
+    <select id="typeSel" class="bdonly"><option value="">Tous types</option><option value="franco-belge">Franco-belge</option><option value="manga">Manga</option><option value="comics">Comics</option><option value="none">Non classés</option></select>
+    <select id="viewSel" class="bdonly"><option value="album">Par album</option><option value="serie">Par série</option></select>
   </div>
   <div class="chips">
     <div class="chip active" data-filter="tous">Tous</div>
@@ -90,6 +102,7 @@ label.btn{display:inline-block;text-align:center}
     <div class="chip" data-filter="wishlist">Wishlist</div>
     <div class="chip" data-filter="nonlu">Non lus</div>
     <div class="chip" data-filter="vendu">Vendus</div>
+    <div class="chip bdonly" data-action="classify">🏷 Classer les types</div>
     <div class="chip" data-action="scan" style="margin-left:auto">📷 Scanner</div>
     <div class="chip" data-action="add">+ Ajouter par ISBN</div>
     <div class="chip" data-action="settings">⚙ Réglages</div>
@@ -159,13 +172,28 @@ label.btn{display:inline-block;text-align:center}
   </div>
 </dialog>
 
+<dialog id="classDlg">
+  <div class="sheet">
+    <h2>Classer les BD par type</h2>
+    <p style="color:var(--ink-soft);font-size:13.5px">Choisis un type pour un éditeur (ou une collection) : toutes ses BD non classées le reçoivent d'un coup. Les plus gros groupes sont en premier.</p>
+    <div class="field"><label>Regrouper par</label><select id="cl_mode" onchange="renderClassify()"><option value="ed">Éditeur</option><option value="edcol">Éditeur + collection</option></select></div>
+    <div id="classList"></div>
+    <div class="sheetbtns"><span></span><div class="left"><button class="btn" onclick="classDlg.close()">Fermer</button><button class="btn primary" onclick="applyClassify()">Appliquer</button></div></div>
+  </div>
+</dialog>
+
 <div class="toast" id="toast"></div>
 
 <script>
 const LS_KEY = 'biblio_data_v1';
 let items = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
 // migration : ancien champ booléen wishlist -> statut possede/wishlist/vendu
-items.forEach(it=>{ if(!it.statut) it.statut = it.wishlist ? 'wishlist' : 'possede'; });
+function migrate(it){
+  if(!it.statut) it.statut = it.wishlist ? 'wishlist' : 'possede';
+  if(!it.biblio){ it.biblio = (it.type==='Roman') ? 'Livre' : 'BD'; if(it.type==='Comics' && !it.typeBD) it.typeBD='comics'; }
+  if(it.typeBD===undefined) it.typeBD='';
+}
+items.forEach(migrate);
 const $ = s => document.querySelector(s);
 const importDlg = $('#importDlg'), detailDlg = $('#detailDlg'), addDlg = $('#addDlg'), settingsDlg = $('#settingsDlg');
 const SETTINGS_KEY = 'biblio_settings_v1';
@@ -212,7 +240,7 @@ function importBedegest(text){
     if(!row || row[iTable]!=='ALBUM') continue;
     items.push({
       id: uid(),
-      type: 'BD',
+      biblio: 'BD', typeBD: '', type: 'BD',
       isbn: row[iISBN]||'',
       serie: row[iSerie]||'',
       tome: row[iNum]||'',
@@ -257,7 +285,7 @@ $('#jsonFile').addEventListener('change', e=>{
     try{
       const data=JSON.parse(ev.target.result);
       if(!Array.isArray(data)) throw new Error('format invalide');
-      data.forEach(it=>{ if(!it.statut) it.statut = it.wishlist ? 'wishlist' : 'possede'; });
+      data.forEach(migrate);
       items = data; save(); render(); importDlg.close();
       toast(data.length+' fiches restaurées');
     } catch(err){ toast('Erreur restauration : '+err.message); }
@@ -317,10 +345,32 @@ function matchesSearch(it,q){
     .some(v=> (v||'').toLowerCase().includes(q));
 }
 
+let currentBiblio='BD';
+function rowHtml(it,inSerie){
+  const label = inSerie
+    ? `${it.tome?'#'+esc(it.tome)+' ':''}${esc(it.titre)}`
+    : `${esc(it.serie||it.titre)}${it.tome?` <span style="color:var(--ink-soft);font-weight:400">#${esc(it.tome)}</span>`:''}`;
+  return `<div class="row ${it.statut==='wishlist'?'wishlist':''}" onclick="openDetail('${it.id}')">
+    <div class="bar" style="${it.statut==='vendu'?'background:var(--ink-soft)':''}"></div>
+    <div class="info">
+      <div class="titre">${label}
+        ${it.statut==='wishlist'?'<span class="badge warm">Wishlist</span>':''}${it.statut==='vendu'?'<span class="badge">Vendu</span>':''}${(it.edition&&it.edition!=='standard')?'<span class="badge warm">'+esc(it.edition)+'</span>':''}${it.dedicace?'<span class="badge">Dédicace</span>':''}${it.aVerifier?'<span class="badge warm">À vérifier</span>':''}${it.lu?'<span class="badge">Lu</span>':''}
+      </div>
+      <div class="meta">${inSerie?'':esc(it.titre)+' — '}${esc(it.scenariste||'')}${it.dessinateur&&it.dessinateur!==it.scenariste?' / '+esc(it.dessinateur):''} · ${esc(it.editeur||'')}</div>
+    </div>
+  </div>`;
+}
 function render(){
   const q = $('#search').value.trim();
   const sort = $('#sort').value;
-  let list = items.filter(it=>matchesFilter(it) && matchesSearch(it,q));
+  const isBD = currentBiblio==='BD';
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.biblio===currentBiblio));
+  document.querySelectorAll('.bdonly').forEach(e=>e.style.display=isBD?'':'none');
+  const view = isBD ? $('#viewSel').value : 'album';
+  const tsel = isBD ? $('#typeSel').value : '';
+  const pool = items.filter(it=>it.biblio===currentBiblio);
+  let list = pool.filter(it=>matchesFilter(it) && matchesSearch(it,q) &&
+    (!tsel || (tsel==='none' ? !it.typeBD : it.typeBD===tsel)));
   list.sort((a,b)=>{
     if(sort==='titre') return (a.titre||'').localeCompare(b.titre||'');
     if(sort==='auteur') return (a.scenariste||'').localeCompare(b.scenariste||'');
@@ -328,26 +378,54 @@ function render(){
     return (a.serie||a.titre||'').localeCompare(b.serie||b.titre||'') || (parseInt(a.tome)||0)-(parseInt(b.tome)||0);
   });
   const main = $('#list');
-  if(items.length===0){
-    main.innerHTML = `<div class="empty"><h2>Ta bibliothèque est vide</h2><p>Importe ta collection BédéGest ou ajoute un premier livre pour commencer.</p></div>`;
+  if(pool.length===0){
+    main.innerHTML = `<div class="empty"><h2>${isBD?'Aucune BD':'Aucun livre'} pour l'instant</h2><p>Importe ta collection, scanne un ISBN ou ajoute une fiche pour commencer.</p></div>`;
   } else if(list.length===0){
     main.innerHTML = `<div class="empty"><h2>Aucun résultat</h2><p>Essaie un autre mot-clé ou un autre filtre.</p></div>`;
+  } else if(view==='serie'){
+    const groups=new Map();
+    list.forEach(it=>{ const k=it.serie||''; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(it); });
+    const keys=[...groups.keys()].sort((a,b)=> a===''?1 : b===''?-1 : a.localeCompare(b));
+    main.innerHTML = keys.map(k=>{
+      const g=groups.get(k).sort((a,b)=>(parseFloat(a.tome)||0)-(parseFloat(b.tome)||0) || (a.titre||'').localeCompare(b.titre||''));
+      const poss=g.filter(i=>i.statut==='possede').length, wish=g.filter(i=>i.statut==='wishlist').length;
+      const auth=[...new Set(g.map(i=>i.scenariste).filter(Boolean))].slice(0,2).join(', ');
+      return `<details class="serie"><summary><span class="titre">${esc(k||'Albums hors série')}</span>
+        <span class="badge">${poss} possédé${poss>1?'s':''}</span>${wish?`<span class="badge warm">${wish} wishlist</span>`:''}
+        <div class="meta">${esc(auth)}</div></summary>${g.map(it=>rowHtml(it,true)).join('')}</details>`;
+    }).join('');
   } else {
-    main.innerHTML = list.map(it=>`
-      <div class="row ${it.statut==='wishlist'?'wishlist':''}" onclick="openDetail('${it.id}')">
-        <div class="bar" style="${it.statut==='vendu'?'background:var(--ink-soft)':''}"></div>
-        <div class="info">
-          <div class="titre">${esc(it.serie||it.titre)}${it.tome?` <span style="color:var(--ink-soft);font-weight:400">#${esc(it.tome)}</span>`:''}
-            ${it.statut==='wishlist'?'<span class="badge warm">Wishlist</span>':''}${it.statut==='vendu'?'<span class="badge">Vendu</span>':''}${(it.edition&&it.edition!=='standard')?'<span class="badge warm">'+esc(it.edition)+'</span>':''}${it.aVerifier?'<span class="badge warm">À vérifier</span>':''}${it.lu?'<span class="badge">Lu</span>':''}
-          </div>
-          <div class="meta">${esc(it.titre)} — ${esc(it.scenariste||'')}${it.dessinateur&&it.dessinateur!==it.scenariste?' / '+esc(it.dessinateur):''} · ${esc(it.editeur||'')}</div>
-        </div>
-      </div>`).join('');
+    main.innerHTML = list.map(it=>rowHtml(it,false)).join('');
   }
-  const total=items.length, poss=items.filter(i=>i.statut==='possede').length,
-        wish=items.filter(i=>i.statut==='wishlist').length, vendu=items.filter(i=>i.statut==='vendu').length;
-  $('#stats').innerHTML = `<span>${total} fiches</span><span>${poss} possédés</span><span>${wish} wishlist</span><span>${vendu} vendus</span>`;
+  const poss=pool.filter(i=>i.statut==='possede').length, wish=pool.filter(i=>i.statut==='wishlist').length, vendu=pool.filter(i=>i.statut==='vendu').length;
+  $('#stats').innerHTML = `<span>${pool.length} fiches</span><span>${poss} possédés</span><span>${wish} wishlist</span><span>${vendu} vendus</span>`;
 }
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ currentBiblio=t.dataset.biblio; render(); }));
+$('#typeSel').addEventListener('change',render);
+$('#viewSel').addEventListener('change',render);
+
+// --- Classement en masse des types de BD ---
+const classDlg=$('#classDlg'); let classGroups=[];
+function classKey(it,mode){ return mode==='edcol' ? ((it.editeur||'(sans éditeur)')+(it.collection?' · '+it.collection:'')) : (it.editeur||'(sans éditeur)'); }
+function renderClassify(){
+  const mode=$('#cl_mode').value, m=new Map();
+  items.filter(i=>i.biblio==='BD' && !i.typeBD).forEach(i=>{ const k=classKey(i,mode); m.set(k,(m.get(k)||0)+1); });
+  classGroups=[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,60);
+  $('#classList').innerHTML = classGroups.length ? classGroups.map(([k,n],idx)=>`
+    <div class="row" style="cursor:default"><div class="info"><div class="titre" style="font-size:14px">${esc(k)}</div><div class="meta">${n} album${n>1?'s':''}</div></div>
+    <select class="cl" data-i="${idx}"><option value="">—</option><option value="franco-belge">Franco-belge</option><option value="manga">Manga</option><option value="comics">Comics</option></select></div>`).join('')
+    : '<p style="color:var(--ink-soft)">Toutes tes BD sont classées.</p>';
+}
+function applyClassify(){
+  const mode=$('#cl_mode').value, chosen=new Map();
+  document.querySelectorAll('#classList select.cl').forEach(sel=>{ if(sel.value) chosen.set(classGroups[+sel.dataset.i][0], sel.value); });
+  if(!chosen.size){ toast('Aucun type choisi'); return; }
+  let n=0;
+  items.forEach(i=>{ if(i.biblio==='BD' && !i.typeBD){ const t=chosen.get(classKey(i,mode)); if(t){ i.typeBD=t; n++; } } });
+  save(); render(); renderClassify(); toast(n+' albums classés');
+}
+document.querySelector('[data-action="classify"]').addEventListener('click',()=>{ renderClassify(); classDlg.showModal(); });
 
 function esc(s){ return (s||'').toString().replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
@@ -377,6 +455,9 @@ function openDetail(id){
       </select>
     </div>
     <div class="field check"><input type="checkbox" id="f_lu" ${it.lu?'checked':''}><label style="margin:0">Lu</label></div>
+    <div class="field check"><input type="checkbox" id="f_dedicace" ${it.dedicace?'checked':''}><label style="margin:0">Dédicacé</label></div>
+    <div class="field"><label>Bibliothèque</label><select id="f_biblio"><option value="BD" ${it.biblio==='BD'?'selected':''}>Bande dessinée</option><option value="Livre" ${it.biblio==='Livre'?'selected':''}>Livre</option></select></div>
+    <div class="field"><label>Type de BD</label><select id="f_typebd">${[['','Non classé'],['franco-belge','Franco-belge'],['manga','Manga'],['comics','Comics']].map(([v,l])=>`<option value="${v}" ${(it.typeBD||'')===v?'selected':''}>${l}</option>`).join('')}</select></div>
     <div class="sheetbtns">
       <div class="left"><button class="btn" onclick="deleteItem('${it.id}')" style="color:#b04545">Supprimer</button></div>
       <div class="left"><button class="btn" onclick="detailDlg.close()">Annuler</button><button class="btn primary" onclick="saveItem('${it.id}')">Enregistrer</button></div>
@@ -389,6 +470,7 @@ function saveItem(id){
   it.scenariste=$('#f_scenariste').value; it.dessinateur=$('#f_dessinateur').value;
   it.editeur=$('#f_editeur').value; it.edition=$('#f_edition').value; it.editionDetail=$('#f_editiondetail').value; it.isbn=$('#f_isbn').value; it.localisation=$('#f_localisation').value;
   it.commentaire=$('#f_commentaire').value; it.statut=$('#f_statut').value; it.lu=$('#f_lu').checked;
+  it.dedicace=$('#f_dedicace').checked; it.biblio=$('#f_biblio').value; it.typeBD=$('#f_typebd').value;
   if($('#f_valide') && $('#f_valide').checked) it.aVerifier='';
   save(); render(); detailDlg.close(); toast('Fiche mise à jour');
 }
@@ -473,8 +555,11 @@ function renderAddForm(isbn, data){
     <div class="field"><label>Scénariste / Auteur</label><input id="n_scenariste" value="${esc(d.auteurs)}"></div>
     <div class="field"><label>Dessinateur (si BD)</label><input id="n_dessinateur" value=""></div>
     <div class="field"><label>Éditeur</label><input id="n_editeur" value="${esc(d.editeur)}"></div>
-    <div class="field"><label>Type</label>
-      <select id="n_type"><option value="BD">BD</option><option value="Roman">Roman</option><option value="Comics">Comics</option></select>
+    <div class="field"><label>Bibliothèque</label>
+      <select id="n_biblio"><option value="BD" ${currentBiblio==='BD'?'selected':''}>Bande dessinée</option><option value="Livre" ${currentBiblio==='Livre'?'selected':''}>Livre</option></select>
+    </div>
+    <div class="field"><label>Type de BD</label>
+      <select id="n_typebd"><option value="">Non classé</option><option value="franco-belge">Franco-belge</option><option value="manga">Manga</option><option value="comics">Comics</option></select>
     </div>
     <div class="field"><label>Statut</label>
       <select id="n_statut"><option value="possede">Possédé</option><option value="wishlist">Wishlist</option></select>
@@ -487,7 +572,7 @@ function saveNewItem(isbn){
   const existing = items.find(i=>i.isbn===isbn && i.statut!=='vendu');
   if(existing && !confirm(`Tu as déjà « ${existing.titre} » (${existing.statut}) avec cet ISBN. Ajouter quand même un exemplaire supplémentaire ?`)) return;
   items.push({
-    id: uid(), type: $('#n_type').value, isbn,
+    id: uid(), biblio: $('#n_biblio').value, typeBD: $('#n_biblio').value==='BD' ? $('#n_typebd').value : '', isbn,
     serie: $('#n_serie').value, tome: $('#n_tome').value, titre: $('#n_titre').value,
     scenariste: $('#n_scenariste').value, dessinateur: $('#n_dessinateur').value,
     editeur: $('#n_editeur').value, collection:'', dateAchat:'', prixAchat:'',
@@ -566,7 +651,7 @@ async function stopCam(){
 async function closeScan(){ await stopCam(); scanDlg.close(); }
 document.querySelector('[data-action="scan"]').addEventListener('click',()=>{ renderQueue(); $('#agentBox').innerHTML=''; scanDlg.showModal(); });
 
-const AGENT_FORMAT = `[{"isbn":"","type":"BD|Roman|Comics","serie":"","tome":"","titre":"","scenariste":"","dessinateur":"","editeur":"","collection":"","date_parution":"","pages":"","edition":"standard|collector|limitée|tirage de tête|poche|intégrale|autre","edition_detail":"","resume":"","a_verifier":""}]`;
+const AGENT_FORMAT = `[{"isbn":"","biblio":"BD|Livre","type_bd":"franco-belge|manga|comics (BD uniquement, sinon vide)","serie":"","tome":"","titre":"","scenariste":"","dessinateur":"","editeur":"","collection":"","date_parution":"","pages":"","edition":"standard|collector|limitée|tirage de tête|poche|intégrale|autre","edition_detail":"","resume":"","a_verifier":""}]`;
 function agentPrompt(list){
   return `Pour chaque ISBN ci-dessous, fais des recherches web (BnF, libraires, Babelio, Bédéthèque, etc.) et compose une fiche de livre.
 Réponds UNIQUEMENT par un tableau JSON valide, sans texte autour, un objet par ISBN, avec exactement ces clés :
@@ -613,7 +698,7 @@ function importFiches(){
   arr.forEach(f=>{
     f=cleanObj(f);
     const isbn=normIsbn(f.isbn)||f.isbn||'';
-    items.push({id:uid(),type:f.type||'BD',isbn,serie:f.serie||'',tome:f.tome||'',titre:f.titre||'',
+    items.push({id:uid(),biblio:(/livre|roman/i.test(f.biblio||f.type||'')?'Livre':'BD'),typeBD:(['franco-belge','manga','comics'].includes((f.type_bd||'').toLowerCase())?(f.type_bd||'').toLowerCase():((f.type||'').toLowerCase()==='comics'?'comics':'')),isbn,serie:f.serie||'',tome:f.tome||'',titre:f.titre||'',
       scenariste:f.scenariste||'',dessinateur:f.dessinateur||'',editeur:f.editeur||'',collection:f.collection||'',
       dateParution:f.date_parution||'',pages:f.pages||'',edition:f.edition||'standard',editionDetail:f.edition_detail||'',resume:f.resume||'',aVerifier:f.a_verifier||'',
       dateAchat:'',prixAchat:'',statut,lu:false,dateLu:'',dedicace:false,commentaire:'',localisation:'',ajoutLe:Date.now()});
