@@ -513,7 +513,7 @@ function normIsbn(s){
   }
   if(s.length!==13) return null;
   let t=0; for(let i=0;i<12;i++) t+=(+s[i])*(i%2?3:1);
-  return ((10-t%10)%10)===+s[12] ? s : null;
+  return (((10-t%10)%10)===+s[12] && /^97[89]/.test(s)) ? s : null;
 }
 function saveQueue(){ localStorage.setItem(Q_KEY, JSON.stringify(queue)); renderQueue(); }
 function addToQueue(raw){
@@ -538,8 +538,21 @@ async function toggleCam(){
   if(camOn){ await stopCam(); return; }
   if(typeof Html5Qrcode==='undefined'){ toast('Module de scan indisponible (connexion requise au premier chargement)'); return; }
   try{
-    cam=new Html5Qrcode('reader');
-    await cam.start({facingMode:'environment'},{fps:10,qrbox:{width:260,height:140}},txt=>{
+    cam=new Html5Qrcode('reader',{
+      formatsToSupport:[Html5QrcodeSupportedFormats.EAN_13],
+      experimentalFeatures:{useBarCodeDetectorIfSupported:true},
+      verbose:false
+    });
+    let last='',n=0,lastOk='',lastOkAt=0;
+    await cam.start({facingMode:'environment'},{
+      fps:12, qrbox:{width:300,height:120},
+      videoConstraints:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080},advanced:[{focusMode:'continuous'}]}
+    },txt=>{
+      if(!normIsbn(txt)) return;                       // ignore silencieusement les lectures invalides
+      if(txt===last) n++; else { last=txt; n=1; }
+      if(n<2) return;                                  // exige 2 lectures identiques d'affilée
+      if(txt===lastOk && Date.now()-lastOkAt<3000) return;
+      lastOk=txt; lastOkAt=Date.now(); n=0;
       if(navigator.vibrate) navigator.vibrate(60);
       addToQueue(txt);
     },()=>{});
