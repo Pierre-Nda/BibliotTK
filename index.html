@@ -152,6 +152,14 @@ details.serie .row{padding-left:18px}
       <label>Clé API Google Books (optionnelle mais recommandée)</label>
       <input id="s_gbkey" placeholder="AIza…">
     </div>
+    <div class="field">
+      <label>Clé API Gemini (recherche automatique des fiches)</label>
+      <input id="s_gemkey" placeholder="AIza…">
+    </div>
+    <div class="field">
+      <label>Modèle Gemini</label>
+      <div style="display:flex;gap:8px"><select id="s_gemmodel" style="flex:1"><option value="">— teste la clé pour lister —</option></select><button class="btn" onclick="testGemini()">Tester la clé</button></div>
+    </div>
     <p style="color:var(--ink-soft);font-size:13px">Sans clé, Google Books limite très vite les recherches anonymes. Avec une clé gratuite, la recherche devient fiable. La clé reste stockée uniquement sur cet appareil.</p>
     <div class="sheetbtns"><span></span><div class="left"><button class="btn" onclick="settingsDlg.close()">Fermer</button><button class="btn primary" onclick="saveSettings()">Enregistrer</button></div></div>
   </div>
@@ -166,6 +174,8 @@ details.serie .row{padding-left:18px}
       <div style="display:flex;gap:8px"><input id="q_isbn" inputmode="numeric" placeholder="978…"><button class="btn primary" onclick="queueManual()">Ajouter</button></div>
     </div>
     <div id="queueList"></div>
+    <div class="sheetbtns" style="margin-top:12px"><select id="gemStatut" style="flex:0"><option value="possede">Ajouter en : Possédé</option><option value="wishlist">Ajouter en : Wishlist</option></select><button class="btn primary" id="gemBtn" onclick="runGemini()">Rechercher avec Gemini</button></div>
+    <div id="gemLog" style="font-size:13px;color:var(--ink-soft);min-height:18px;margin-top:6px"></div>
     <div class="sheetbtns"><button class="btn" onclick="showPaste()">Coller les fiches</button><button class="btn primary" onclick="copyForAgent()">Copier pour l'agent</button></div>
     <div id="agentBox"></div>
     <div class="sheetbtns"><span></span><button class="btn" onclick="closeScan()">Fermer</button></div>
@@ -320,10 +330,12 @@ document.querySelector('[data-action="add"]').addEventListener('click',()=>{
   $('#add_isbn').value=''; $('#addResult').innerHTML=''; addDlg.showModal(); setTimeout(()=>$('#add_isbn').focus(),50);
 });
 document.querySelector('[data-action="settings"]').addEventListener('click',()=>{
-  $('#s_gbkey').value = settings.gbkey || ''; settingsDlg.showModal();
+  $('#s_gbkey').value = settings.gbkey || ''; $('#s_gemkey').value = settings.gemkey || '';
+  const sel=$('#s_gemmodel'); if(settings.gemmodel) sel.innerHTML='<option value="'+esc(settings.gemmodel)+'">'+esc(settings.gemmodel)+'</option>';
+  settingsDlg.showModal();
 });
 function saveSettings(){
-  settings.gbkey = $('#s_gbkey').value.trim();
+  settings.gbkey = $('#s_gbkey').value.trim(); settings.gemkey = $('#s_gemkey').value.trim(); settings.gemmodel = $('#s_gemmodel').value;
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   settingsDlg.close(); toast('Réglages enregistrés');
 }
@@ -691,10 +703,8 @@ function showPaste(){
     <div class="field"><label>Statut des fiches importées</label><select id="pasteStatut"><option value="possede">Possédé</option><option value="wishlist">Wishlist</option></select></div>
     <div class="sheetbtns"><span></span><button class="btn primary" onclick="importFiches()">Importer</button></div>`;
 }
-function importFiches(){
-  let txt=$('#pasteJson').value, arr;
-  try{ arr=JSON.parse(extractJsonArray(txt)); if(!Array.isArray(arr)) throw 0; }catch(e){ toast('JSON illisible : redemande à l\'agent un tableau JSON seul'); return; }
-  const statut=$('#pasteStatut').value; let n=0;
+function ingestFiches(arr,statut){
+  let n=0;
   arr.forEach(f=>{
     f=cleanObj(f);
     const isbn=normIsbn(f.isbn)||f.isbn||'';
@@ -704,8 +714,74 @@ function importFiches(){
       dateAchat:'',prixAchat:'',statut,lu:false,dateLu:'',dedicace:false,commentaire:'',localisation:'',ajoutLe:Date.now()});
     queue=queue.filter(q=>q!==isbn); n++;
   });
-  save(); saveQueue(); render(); $('#agentBox').innerHTML='';
+  save(); saveQueue(); render();
+  return n;
+}
+function importFiches(){
+  let txt=$('#pasteJson').value, arr;
+  try{ arr=JSON.parse(extractJsonArray(txt)); if(!Array.isArray(arr)) throw 0; }catch(e){ toast('JSON illisible : redemande à l\'agent un tableau JSON seul'); return; }
+  const n=ingestFiches(arr,$('#pasteStatut').value);
+  $('#agentBox').innerHTML='';
   toast(n+' fiches importées — celles marquées « À vérifier » sont à contrôler');
+}
+
+// --- Agent Gemini (recherche Google intégrée) ---
+var GEM_DELAY=4000;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const gemVer=n=>parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/)||[0,0])[1]);
+async function testGemini(){
+  const key=$('#s_gemkey').value.trim();
+  if(!key){ toast('Colle d\'abord ta clé Gemini'); return; }
+  try{
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':key}});
+    if(!r.ok){ toast('Clé refusée (HTTP '+r.status+')'); return; }
+    const d=await r.json();
+    const ok=(d.models||[])
+      .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent') && /flash/.test(m.name) && !/image|tts|live|audio|embed|robot|computer|lite|thinking/.test(m.name))
+      .map(m=>m.name.replace('models/',''))
+      .sort((a,b)=> gemVer(b)-gemVer(a) || (/preview/.test(a)?1:0)-(/preview/.test(b)?1:0) || a.localeCompare(b));
+    if(!ok.length){ toast('Clé valide, mais aucun modèle Flash trouvé'); return; }
+    const cur=$('#s_gemmodel').value;
+    $('#s_gemmodel').innerHTML=ok.map(m=>'<option value="'+esc(m)+'">'+esc(m)+'</option>').join('');
+    if(ok.includes(cur)) $('#s_gemmodel').value=cur;
+    toast('Clé valide — '+ok.length+' modèles Flash. Enregistre les réglages.');
+  }catch(e){ toast('Connexion impossible : '+e.message); }
+}
+async function geminiFiche(isbn,key,model){
+  const body={contents:[{parts:[{text:agentPrompt([isbn])}]}],tools:[{google_search:{}}]};
+  for(let attempt=0;attempt<3;attempt++){
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',
+      {method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(body)});
+    if(r.status===429){ await sleep(GEM_DELAY*4*(attempt+1)); continue; }
+    if(!r.ok){ let m=''; try{ m=(await r.json()).error.message; }catch(e){} throw new Error('HTTP '+r.status+(m?' – '+m.slice(0,140):'')); }
+    const d=await r.json();
+    const parts=((d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[]);
+    const txt=parts.map(p=>p.text||'').join('');
+    const arr=JSON.parse(extractJsonArray(txt));
+    if(!Array.isArray(arr)||!arr.length) throw new Error('réponse vide');
+    return arr[0];
+  }
+  throw new Error('limite de requêtes atteinte');
+}
+let gemRunning=false;
+async function runGemini(){
+  if(gemRunning) return;
+  if(!settings.gemkey || !settings.gemmodel){ toast('Réglages : colle ta clé Gemini, clique « Tester la clé », choisis un modèle'); return; }
+  if(!queue.length){ toast('La file est vide'); return; }
+  gemRunning=true; $('#gemBtn').disabled=true;
+  const statut=$('#gemStatut').value, todo=[...queue], log=$('#gemLog'); let ok=0, ko=0;
+  for(let i=0;i<todo.length;i++){
+    const isbn=todo[i];
+    log.textContent='Recherche '+(i+1)+'/'+todo.length+' : '+isbn+'…';
+    try{
+      const f=await geminiFiche(isbn,settings.gemkey,settings.gemmodel);
+      f.isbn=isbn; ingestFiches([f],statut); ok++;
+    }catch(e){ ko++; log.textContent=isbn+' : échec ('+e.message+')'; await sleep(GEM_DELAY/2); }
+    if(i<todo.length-1) await sleep(GEM_DELAY);
+  }
+  gemRunning=false; $('#gemBtn').disabled=false;
+  log.textContent=ok+' fiche(s) créée(s)'+(ko?', '+ko+' échec(s) laissé(s) dans la file':'');
+  toast(ok+' fiche(s) ajoutée(s)'+(ko?' — '+ko+' à réessayer':''));
 }
 
 render();
