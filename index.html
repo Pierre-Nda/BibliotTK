@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ma Bibliothèque</title>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
@@ -89,7 +90,8 @@ label.btn{display:inline-block;text-align:center}
     <div class="chip" data-filter="wishlist">Wishlist</div>
     <div class="chip" data-filter="nonlu">Non lus</div>
     <div class="chip" data-filter="vendu">Vendus</div>
-    <div class="chip" data-action="add" style="margin-left:auto">+ Ajouter par ISBN</div>
+    <div class="chip" data-action="scan" style="margin-left:auto">📷 Scanner</div>
+    <div class="chip" data-action="add">+ Ajouter par ISBN</div>
     <div class="chip" data-action="settings">⚙ Réglages</div>
     <div class="chip" data-action="import">Importer</div>
     <div class="chip" data-action="export">Exporter</div>
@@ -139,6 +141,21 @@ label.btn{display:inline-block;text-align:center}
     </div>
     <p style="color:var(--ink-soft);font-size:13px">Sans clé, Google Books limite très vite les recherches anonymes. Avec une clé gratuite, la recherche devient fiable. La clé reste stockée uniquement sur cet appareil.</p>
     <div class="sheetbtns"><span></span><div class="left"><button class="btn" onclick="settingsDlg.close()">Fermer</button><button class="btn primary" onclick="saveSettings()">Enregistrer</button></div></div>
+  </div>
+</dialog>
+
+<dialog id="scanDlg">
+  <div class="sheet">
+    <h2>Scanner &amp; file d'attente</h2>
+    <div id="reader" style="width:100%;min-height:0"></div>
+    <div class="sheetbtns" style="margin-top:8px"><span></span><button class="btn" id="camBtn" onclick="toggleCam()">Démarrer la caméra</button></div>
+    <div class="field" style="margin-top:12px"><label>Ou saisir un ISBN</label>
+      <div style="display:flex;gap:8px"><input id="q_isbn" inputmode="numeric" placeholder="978…"><button class="btn primary" onclick="queueManual()">Ajouter</button></div>
+    </div>
+    <div id="queueList"></div>
+    <div class="sheetbtns"><button class="btn" onclick="showPaste()">Coller les fiches</button><button class="btn primary" onclick="copyForAgent()">Copier pour l'agent</button></div>
+    <div id="agentBox"></div>
+    <div class="sheetbtns"><span></span><button class="btn" onclick="closeScan()">Fermer</button></div>
   </div>
 </dialog>
 
@@ -321,7 +338,7 @@ function render(){
         <div class="bar" style="${it.statut==='vendu'?'background:var(--ink-soft)':''}"></div>
         <div class="info">
           <div class="titre">${esc(it.serie||it.titre)}${it.tome?` <span style="color:var(--ink-soft);font-weight:400">#${esc(it.tome)}</span>`:''}
-            ${it.statut==='wishlist'?'<span class="badge warm">Wishlist</span>':''}${it.statut==='vendu'?'<span class="badge">Vendu</span>':''}${it.lu?'<span class="badge">Lu</span>':''}
+            ${it.statut==='wishlist'?'<span class="badge warm">Wishlist</span>':''}${it.statut==='vendu'?'<span class="badge">Vendu</span>':''}${(it.edition&&it.edition!=='standard')?'<span class="badge warm">'+esc(it.edition)+'</span>':''}${it.aVerifier?'<span class="badge warm">À vérifier</span>':''}${it.lu?'<span class="badge">Lu</span>':''}
           </div>
           <div class="meta">${esc(it.titre)} — ${esc(it.scenariste||'')}${it.dessinateur&&it.dessinateur!==it.scenariste?' / '+esc(it.dessinateur):''} · ${esc(it.editeur||'')}</div>
         </div>
@@ -338,12 +355,17 @@ function openDetail(id){
   const it = items.find(i=>i.id===id); if(!it) return;
   $('#detailBody').innerHTML = `
     <h2>${esc(it.titre)}</h2>
+    ${it.aVerifier?`<div class="field" style="background:var(--warm-soft);padding:10px;border-radius:4px"><label style="color:var(--warm)">À vérifier</label><div style="font-size:13.5px">${esc(it.aVerifier)}</div><label style="margin-top:8px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="f_valide" style="width:auto"> C'est vérifié, retirer le marqueur</label></div>`:''}
     <div class="field"><label>Série</label><input id="f_serie" value="${esc(it.serie)}"></div>
     <div class="field"><label>Tome</label><input id="f_tome" value="${esc(it.tome)}"></div>
     <div class="field"><label>Titre</label><input id="f_titre" value="${esc(it.titre)}"></div>
     <div class="field"><label>Scénariste</label><input id="f_scenariste" value="${esc(it.scenariste)}"></div>
     <div class="field"><label>Dessinateur</label><input id="f_dessinateur" value="${esc(it.dessinateur)}"></div>
     <div class="field"><label>Éditeur / Collection</label><input id="f_editeur" value="${esc(it.editeur)}"></div>
+    <div class="field"><label>Type d'édition</label>
+      <select id="f_edition">${['standard','collector','limitée','tirage de tête','poche','intégrale','autre'].map(o=>`<option value="${o}" ${(it.edition||'standard')===o?'selected':''}>${o}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Détail de l'édition (tirage, contenus exclusifs, n° d'exemplaire…)</label><input id="f_editiondetail" value="${esc(it.editionDetail)}"></div>
     <div class="field"><label>ISBN</label><input id="f_isbn" value="${esc(it.isbn)}"></div>
     <div class="field"><label>Localisation</label><input id="f_localisation" value="${esc(it.localisation)}"></div>
     <div class="field"><label>Commentaire</label><textarea id="f_commentaire">${esc(it.commentaire)}</textarea></div>
@@ -365,8 +387,9 @@ function saveItem(id){
   const it = items.find(i=>i.id===id); if(!it) return;
   it.serie=$('#f_serie').value; it.tome=$('#f_tome').value; it.titre=$('#f_titre').value;
   it.scenariste=$('#f_scenariste').value; it.dessinateur=$('#f_dessinateur').value;
-  it.editeur=$('#f_editeur').value; it.isbn=$('#f_isbn').value; it.localisation=$('#f_localisation').value;
+  it.editeur=$('#f_editeur').value; it.edition=$('#f_edition').value; it.editionDetail=$('#f_editiondetail').value; it.isbn=$('#f_isbn').value; it.localisation=$('#f_localisation').value;
   it.commentaire=$('#f_commentaire').value; it.statut=$('#f_statut').value; it.lu=$('#f_lu').checked;
+  if($('#f_valide') && $('#f_valide').checked) it.aVerifier='';
   save(); render(); detailDlg.close(); toast('Fiche mise à jour');
 }
 function deleteItem(id){
@@ -473,6 +496,118 @@ function saveNewItem(isbn){
   });
   save(); render(); addDlg.close();
   toast('Ajouté à la bibliothèque');
+}
+
+// --- Scan, file d'attente d'ISBN, échange avec l'agent de recherche ---
+const Q_KEY='biblio_queue_v1';
+let queue = JSON.parse(localStorage.getItem(Q_KEY)||'[]');
+let cam=null, camOn=false;
+const scanDlg=$('#scanDlg');
+
+function normIsbn(s){
+  s=(s||'').replace(/[^0-9Xx]/g,'').toUpperCase();
+  if(s.length===10){
+    const b='978'+s.slice(0,9); let t=0;
+    for(let i=0;i<12;i++) t+=(+b[i])*(i%2?3:1);
+    s=b+((10-t%10)%10);
+  }
+  if(s.length!==13) return null;
+  let t=0; for(let i=0;i<12;i++) t+=(+s[i])*(i%2?3:1);
+  return ((10-t%10)%10)===+s[12] ? s : null;
+}
+function saveQueue(){ localStorage.setItem(Q_KEY, JSON.stringify(queue)); renderQueue(); }
+function addToQueue(raw){
+  const isbn=normIsbn(raw);
+  if(!isbn){ toast('ISBN invalide'); return false; }
+  if(queue.includes(isbn)){ toast('Déjà dans la file'); return false; }
+  const have=items.find(i=>i.isbn===isbn && i.statut!=='vendu');
+  queue.push(isbn); saveQueue();
+  toast(have ? 'Attention : déjà en bibliothèque ('+have.titre+'). Ajouté à la file.' : 'Ajouté : '+isbn);
+  return true;
+}
+function queueManual(){ if(addToQueue($('#q_isbn').value)) $('#q_isbn').value=''; }
+function renderQueue(){
+  $('#queueList').innerHTML = queue.length
+    ? '<p style="font-size:13px;color:var(--ink-soft);margin:12px 0 4px">'+queue.length+' ISBN en attente</p>'+
+      queue.map(q=>`<div class="row" style="cursor:default;padding:6px 4px"><div class="info" style="font-family:ui-monospace,monospace;font-size:13px">${q}</div><button class="btn" onclick="rmQueue('${q}')">✕</button></div>`).join('')
+    : '<p style="font-size:13px;color:var(--ink-soft);margin:12px 0">File vide. Scanne ou saisis des ISBN, même sans connexion.</p>';
+}
+function rmQueue(q){ queue=queue.filter(x=>x!==q); saveQueue(); }
+
+async function toggleCam(){
+  if(camOn){ await stopCam(); return; }
+  if(typeof Html5Qrcode==='undefined'){ toast('Module de scan indisponible (connexion requise au premier chargement)'); return; }
+  try{
+    cam=new Html5Qrcode('reader');
+    await cam.start({facingMode:'environment'},{fps:10,qrbox:{width:260,height:140}},txt=>{
+      if(navigator.vibrate) navigator.vibrate(60);
+      addToQueue(txt);
+    },()=>{});
+    camOn=true; $('#camBtn').textContent='Arrêter la caméra';
+  }catch(e){ toast('Caméra inaccessible : autorise-la dans Safari'); }
+}
+async function stopCam(){
+  try{ if(cam){ await cam.stop(); cam.clear(); } }catch(e){}
+  camOn=false; cam=null; $('#camBtn').textContent='Démarrer la caméra';
+}
+async function closeScan(){ await stopCam(); scanDlg.close(); }
+document.querySelector('[data-action="scan"]').addEventListener('click',()=>{ renderQueue(); $('#agentBox').innerHTML=''; scanDlg.showModal(); });
+
+const AGENT_FORMAT = `[{"isbn":"","type":"BD|Roman|Comics","serie":"","tome":"","titre":"","scenariste":"","dessinateur":"","editeur":"","collection":"","date_parution":"","pages":"","edition":"standard|collector|limitée|tirage de tête|poche|intégrale|autre","edition_detail":"","resume":"","a_verifier":""}]`;
+function agentPrompt(list){
+  return `Pour chaque ISBN ci-dessous, fais des recherches web (BnF, libraires, Babelio, Bédéthèque, etc.) et compose une fiche de livre.
+Réponds UNIQUEMENT par un tableau JSON valide, sans texte autour, un objet par ISBN, avec exactement ces clés :
+${AGENT_FORMAT}
+Règles : ne rien inventer, laisser "" si introuvable ; séparer scénariste et dessinateur pour les BD ; pour un roman, mettre l'auteur dans "scenariste" ; dans "a_verifier", signaler en une phrase les conflits entre sources (dont pages, date, collection), les déductions non confirmées et les champs introuvables. Indique dans "edition" si cet ISBN correspond à une édition standard, collector, limitée, tirage de tête, poche ou intégrale (tirage, contenus exclusifs dans "edition_detail"), et signale dans "a_verifier" si plusieurs éditions existent pour ce titre. N'insère aucun lien ni numéro de citation dans les valeurs.
+ISBN :
+${list.join('\n')}`;
+}
+async function copyForAgent(){
+  if(!queue.length){ toast('La file est vide'); return; }
+  const txt=agentPrompt(queue);
+  try{ await navigator.clipboard.writeText(txt); toast('Copié : colle-le dans ton agent'); }
+  catch(e){ toast('Copie manuelle : sélectionne le texte ci-dessous'); }
+  $('#agentBox').innerHTML=`<textarea readonly style="width:100%;height:120px;margin-top:10px;font-size:12px">${esc(txt)}</textarea>`;
+}
+function extractJsonArray(txt){
+  const a=txt.indexOf('['); if(a<0) return null;
+  let d=0,inS=false,esc=false;
+  for(let i=a;i<txt.length;i++){
+    const c=txt[i];
+    if(inS){ if(esc) esc=false; else if(c==='\\') esc=true; else if(c==='"') inS=false; }
+    else if(c==='"') inS=true;
+    else if(c==='[') d++;
+    else if(c===']'){ d--; if(d===0) return txt.slice(a,i+1); }
+  }
+  return null;
+}
+function cleanStr(s){
+  return (typeof s==='string')
+    ? s.replace(/\[\[\d+\]\([^)]*\)\]/g,'').replace(/\[\d+\]/g,'').replace(/\s+([.,;])/g,'$1').trim()
+    : (s==null ? '' : String(s));
+}
+function cleanObj(o){ const r={}; for(const k in o) r[k]=cleanStr(o[k]); return r; }
+
+function showPaste(){
+  $('#agentBox').innerHTML=`<div class="field" style="margin-top:12px"><label>Colle ici la réponse de l'agent (JSON)</label><textarea id="pasteJson" style="height:120px"></textarea></div>
+    <div class="field"><label>Statut des fiches importées</label><select id="pasteStatut"><option value="possede">Possédé</option><option value="wishlist">Wishlist</option></select></div>
+    <div class="sheetbtns"><span></span><button class="btn primary" onclick="importFiches()">Importer</button></div>`;
+}
+function importFiches(){
+  let txt=$('#pasteJson').value, arr;
+  try{ arr=JSON.parse(extractJsonArray(txt)); if(!Array.isArray(arr)) throw 0; }catch(e){ toast('JSON illisible : redemande à l\'agent un tableau JSON seul'); return; }
+  const statut=$('#pasteStatut').value; let n=0;
+  arr.forEach(f=>{
+    f=cleanObj(f);
+    const isbn=normIsbn(f.isbn)||f.isbn||'';
+    items.push({id:uid(),type:f.type||'BD',isbn,serie:f.serie||'',tome:f.tome||'',titre:f.titre||'',
+      scenariste:f.scenariste||'',dessinateur:f.dessinateur||'',editeur:f.editeur||'',collection:f.collection||'',
+      dateParution:f.date_parution||'',pages:f.pages||'',edition:f.edition||'standard',editionDetail:f.edition_detail||'',resume:f.resume||'',aVerifier:f.a_verifier||'',
+      dateAchat:'',prixAchat:'',statut,lu:false,dateLu:'',dedicace:false,commentaire:'',localisation:'',ajoutLe:Date.now()});
+    queue=queue.filter(q=>q!==isbn); n++;
+  });
+  save(); saveQueue(); render(); $('#agentBox').innerHTML='';
+  toast(n+' fiches importées — celles marquées « À vérifier » sont à contrôler');
 }
 
 render();
